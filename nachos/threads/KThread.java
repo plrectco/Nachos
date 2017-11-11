@@ -3,7 +3,9 @@ package nachos.threads;
 import nachos.machine.*;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A KThread is a thread that can be used to execute Nachos kernel code. Nachos
@@ -307,11 +309,12 @@ public class KThread {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
 
 		Lib.assertTrue(this != currentThread);
-		Lib.assertTrue(!waitForJoining.containsKey(this));
+		Lib.assertTrue(!joined.contains(this));
 		if(this.status == statusFinished)
 			return;
 
 		waitForJoining.put(this, currentThread);
+		joined.add(this);
 		boolean intStatus = Machine.interrupt().disable();
 		KThread.sleep();
 		Machine.interrupt().restore(intStatus);
@@ -507,6 +510,8 @@ public class KThread {
 	}
 
 	private static Map<KThread, KThread> waitForJoining = new HashMap<>();
+
+	private static Set<KThread> joined = new HashSet<>();
 
 
 

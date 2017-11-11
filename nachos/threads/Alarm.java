@@ -108,6 +108,7 @@ public class Alarm {
 		KThread.currentThread().yield();
 		alarmTest1();
 		tA.join();
+//		tA.join();
 		tB.join();
 
 
