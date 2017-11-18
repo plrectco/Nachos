@@ -4,6 +4,9 @@ import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
 
+import java.util.LinkedList;
+import java.util.Queue;
+
 /**
  * A kernel that can support multiple user processes.
  */
@@ -29,6 +32,8 @@ public class UserKernel extends ThreadedKernel {
 				exceptionHandler();
 			}
 		});
+
+		initFreePage();
 	}
 
 	/**
@@ -101,6 +106,33 @@ public class UserKernel extends ThreadedKernel {
 		KThread.currentThread().finish();
 	}
 
+	private void initFreePage() {
+		freePage = new LinkedList<>();
+		int numPhyPages = Machine.processor().getNumPhysPages();
+		// assume all main mem available
+		for(int i = 0; i < numPhyPages; i++)
+			freePage.add(i);
+//		freePageLock = new Lock();
+
+	}
+
+	public static int getFreePage() {
+		Lib.assertTrue(freePage != null && !freePage.isEmpty());
+//		freePageLock.acquire();
+		int ppn = freePage.poll();
+//		freePageLock.release();
+		return ppn;
+	}
+
+	public static int getFreePageSize() {
+		Lib.assertTrue(freePage != null);
+		return freePage.size();
+	}
+
+	public static void returnFreePage(int ppn) {
+		freePage.add(ppn);
+	}
+
 	/**
 	 * Terminate this kernel. Never returns.
 	 */
@@ -113,4 +145,8 @@ public class UserKernel extends ThreadedKernel {
 
 	// dummy variables to make javac smarter
 	private static Coff dummy1 = null;
+
+	private static Queue<Integer> freePage = null;
+
+//	private static Lock freePageLock;
 }

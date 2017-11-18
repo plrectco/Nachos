@@ -9,6 +9,7 @@
 #		setenv ARCHDIR ../mips-x86.win32-xgcc
 
 # you need to point to the right executables
+
 GCCDIR = $(ARCHDIR)/mips-
 
 ASFLAGS = -mips1
@@ -30,7 +31,7 @@ STDLIB_O = start.o stdio.o stdlib.o
 LIB = assert atoi printf readline stdio strncmp strcat strcmp strcpy strlen memcpy memset
 NLIB = libnachos.a
 
-TARGETS = halt sh matmult sort echo cat cp mv rm
+TARGETS = halt sh matmult sort echo cat cp mv rm write write1 write4 write10
 
 .SECONDARY: $(patsubst %.c,%.o,$(wildcard *.c))
 
