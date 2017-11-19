@@ -6,6 +6,8 @@ import nachos.userprog.*;
 import nachos.vm.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 
 /**
@@ -29,7 +31,7 @@ public class UserProcess {
 //		pageTable = new TranslationEntry[numPhysPages];
 //		for (int i = 0; i < numPhysPages; i++)
 //			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
-		pageLock = new Lock();
+		mutex = new Lock();
 		fileTable = new OpenFile[maxFileNum];
 		fileTable[0] = UserKernel.console.openForReading();
 		fileTable[1] = UserKernel.console.openForWriting();
@@ -73,7 +75,9 @@ public class UserProcess {
 		if (!load(name, args))
 			return false;
 
-		new UThread(this).setName(name).fork();
+		UThread ut = new UThread(this);
+		ut.setName(name).fork();
+		thisThread = ut;
 
 		return true;
 	}
@@ -328,7 +332,7 @@ public class UserProcess {
 	 * @return <tt>true</tt> if the sections were successfully loaded.
 	 */
 	protected boolean loadSections() {
-		pageLock.acquire();
+		mutex.acquire();
 		if (numPages > UserKernel.getFreePageSize()) {
 			coff.close();
 			Lib.debug(dbgProcess, "\tinsufficient physical memory");
@@ -362,7 +366,7 @@ public class UserProcess {
 			pageTable[vpn] = new TranslationEntry(vpn, ppn, true, false, false, false);
 		}
 
-		pageLock.release();
+		mutex.release();
 		return true;
 	}
 
@@ -370,11 +374,11 @@ public class UserProcess {
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
 	protected void unloadSections() {
-		pageLock.acquire();
+		mutex.acquire();
 		for(int i = 0; i < numPages; i++) {
 			UserKernel.returnFreePage(pageTable[i].ppn);
 		}
-		pageLock.release();
+		mutex.release();
 
 	}
 
@@ -405,19 +409,77 @@ public class UserProcess {
 	 * Handle the halt() system call.
 	 */
 	private int handleHalt() {
-
-		Machine.halt();
+		if(pid == 0)
+			Machine.halt();
+		else
+			return -1;
 
 		Lib.assertNotReached("Machine.halt() did not halt machine!");
 		return 0;
 	}
+
+	private int handleExec(int nameAddr, int argc, int argvAddr) {
+		String name = readVirtualMemoryString(nameAddr, 256);
+		if(name == null || argc < 0) return -1;
+
+		// it is ok if argc == 0
+		String[] argv = new String[argc];
+		int offset = 0;
+		for(int i = 0; i < argc; i++) {
+			argv[i] = readVirtualMemoryString(argvAddr+offset, 256);
+			if(argv[i] == null)
+				return -1;
+			// including the '\0'
+			offset += argv[i].length()+1;
+		}
+
+		UserProcess child = new UserProcess();
+		child.parent = this;
+		if(!child.execute(name, argv))
+			return -1;
+
+		mutex.acquire();
+		int pid = ++idCounter;
+		child.pid = pid;
+		children.add(pid);
+		allProcesses.put(pid, child);
+		mutex.release();
+		return pid;
+	}
+
+	// can only join its children
+	// each can be joined once
+	// if had finished, then return
+	private int handleJoin(int processID, int statusAddr) {
+		if(!children.contains(processID)) return -1;
+		UserProcess targetProcess = allProcesses.get(processID);
+
+		targetProcess.thisThread.join();
+
+		children.remove(processID);
+		byte[] buffer = Lib.bytesFromInt(targetProcess.exitStatus);
+		int r = readVirtualMemory(statusAddr, buffer);
+		if(r == 0) return -1;
+		if(targetProcess.exitStatus != -1)
+			return 1;
+		else
+			return 0;
+	}
+
 
 	/**
 	 * Handle the exit() system call.
 	 */
 	private int handleExit(int status) {
 		Machine.autoGrader().finishingCurrentProcess(status);
-
+		this.exitStatus = status;
+		unloadSections();
+		closeFiles();
+		allProcesses.remove(pid);
+		this.parent = null;
+		if(allProcesses.isEmpty())
+			Kernel.kernel.terminate();
+		this.thisThread.finish();
 		return 0;
 	}
 
@@ -452,7 +514,7 @@ public class UserProcess {
 		return fd;
 	}
 
-	// how can we check part of the memory is read only
+
 	private int handleRead(int fd, int bufferAddr, int size) {
 		// check fd, size
 		if(fd < 0 || fd >= maxFileNum || size < 0) return -1;
@@ -487,8 +549,8 @@ public class UserProcess {
 		// check fd, size
 		if(fd < 0 || fd >= maxFileNum || size < 0) return -1;
 		// check buffer
-		// check buffer
-		if (bufferAddr < 0 || bufferAddr >= pageSize*numPages)
+
+		if (bufferAddr < 0 || bufferAddr + size>= pageSize*numPages)
 			return -1;
 
 		OpenFile f = fileTable[fd];
@@ -613,6 +675,10 @@ public class UserProcess {
 				return handleRead(a0, a1, a2);
 			case syscallWrite:
 				return handleWrite(a0,a1, a2);
+			case syscallExec:
+				return handleExec(a0, a1, a2);
+			case syscallJoin:
+				return handleJoin(a0, a1);
 
 
 		default:
@@ -650,14 +716,26 @@ public class UserProcess {
 		}
 	}
 
-	// check readonly
+
+
+	/**
+	 * Check if the address is read only
+	 * Require address to be valid
+	 * @param vddr virtual address
+	 * @return physical address
+	 */
 	private boolean checkReadOnly(int vddr) {
 		Lib.assertTrue(vddr >= 0 && vddr < pageSize*numPages);
 		int vpn = vddr / pageSize;
 		return pageTable[vpn].readOnly;
 	}
 
-	// require vddr be valid
+	/**
+	 * Translate virtual address to physical address
+	 * Require address to be valid
+	 * @param vddr virtual address
+	 * @return physical address
+	 */
 	private int translate(int vddr) {
 		Lib.assertTrue(vddr >= 0 && vddr < pageSize*numPages);
 		int vpn = vddr / pageSize;
@@ -665,6 +743,11 @@ public class UserProcess {
 		return ppn*pageSize + vddr%pageSize;
 	}
 
+	/**
+	 * Parse string from address
+	 * @param addr
+	 * @return parsed string
+	 */
 	private String getStringFromAddr(int addr) {
 		byte[] buffer = new byte[256];
 		int result = readVirtualMemory(addr, buffer,0, 256);
@@ -701,6 +784,13 @@ public class UserProcess {
 		return -1;
 	}
 
+	private void closeFiles() {
+		for(int i = 0; i < maxFileNum; i++) {
+			if(fileTable[i] != null)
+				fileTable[i].close();
+		}
+	}
+
 	/** The program being run by this process. */
 	protected Coff coff;
 
@@ -712,6 +802,8 @@ public class UserProcess {
 
 	/** The number of pages in the program's stack. */
 	protected final int stackPages = 8;
+
+	protected UThread thisThread = null;
 
 	private int initialPC, initialSP;
 
@@ -725,5 +817,18 @@ public class UserProcess {
 
 	private final int maxFileNum = 16;
 
-	private Lock pageLock = null;
+	private Lock mutex = null;
+
+	private HashSet<Integer> children = new HashSet<>();
+
+	private UserProcess parent = null;
+
+	private static HashMap<Integer, UserProcess> allProcesses = new HashMap<>();
+
+	private static int idCounter = 0;
+
+	private int exitStatus = -1;
+
+	private int pid = 0;
+
 }
