@@ -44,6 +44,7 @@ main ()
 	   return 0;
        }
 
+
        // echo the input to the output
        puts (buffer);
    }

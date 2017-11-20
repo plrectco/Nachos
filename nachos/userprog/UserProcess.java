@@ -32,10 +32,15 @@ public class UserProcess {
 //		for (int i = 0; i < numPhysPages; i++)
 //			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
 		mutex = new Lock();
+
 		fileTable = new OpenFile[maxFileNum];
 		fileTable[0] = UserKernel.console.openForReading();
 		fileTable[1] = UserKernel.console.openForWriting();
 
+		mutex.acquire();
+		pid = ++idCounter;
+		allProcesses.put(pid, this);
+		mutex.release();
 
 	}
 
@@ -229,7 +234,7 @@ public class UserProcess {
 			if(checkReadOnly(vaddr+write))
 				return write;
 
-			System.arraycopy(memory, translate(vaddr + write), data, offset+write, writeLength);
+			System.arraycopy( data, offset+write, memory, translate(vaddr + write), writeLength);
 			write += writeLength;
 		}
 
@@ -420,45 +425,47 @@ public class UserProcess {
 
 	private int handleExec(int nameAddr, int argc, int argvAddr) {
 		String name = readVirtualMemoryString(nameAddr, 256);
-		if(name == null || argc < 0) return -1;
+		if(argc < 0) return -1;
 
-		// it is ok if argc == 0
-		String[] argv = new String[argc];
-		int offset = 0;
+		String[] argv = new String[0];
+
+		argv = new String[argc];
+
 		for(int i = 0; i < argc; i++) {
-			argv[i] = readVirtualMemoryString(argvAddr+offset, 256);
+			byte [] addr = new byte[4];
+			int r = readVirtualMemory(argvAddr + i*4, addr);
+			if(r != 4) return -1;
+
+			argv[i] = readVirtualMemoryString(Lib.bytesToInt(addr, 0), 256);
 			if(argv[i] == null)
 				return -1;
-			// including the '\0'
-			offset += argv[i].length()+1;
 		}
+
 
 		UserProcess child = new UserProcess();
 		child.parent = this;
 		if(!child.execute(name, argv))
 			return -1;
+		children.put(child.pid, child);
 
-		mutex.acquire();
-		int pid = ++idCounter;
-		child.pid = pid;
-		children.add(pid);
-		allProcesses.put(pid, child);
-		mutex.release();
-		return pid;
+		return child.pid;
 	}
 
 	// can only join its children
 	// each can be joined once
 	// if had finished, then return
 	private int handleJoin(int processID, int statusAddr) {
-		if(!children.contains(processID)) return -1;
-		UserProcess targetProcess = allProcesses.get(processID);
+		if(!children.containsKey(processID)) return -1;
+		UserProcess targetProcess = children.get(processID);
+		// if it is none, then the target process has already return
+		if(targetProcess == null)
+			return 0;
 
 		targetProcess.thisThread.join();
 
 		children.remove(processID);
 		byte[] buffer = Lib.bytesFromInt(targetProcess.exitStatus);
-		int r = readVirtualMemory(statusAddr, buffer);
+		int r = writeVirtualMemory(statusAddr, buffer);
 		if(r == 0) return -1;
 		if(targetProcess.exitStatus != -1)
 			return 1;
@@ -479,7 +486,7 @@ public class UserProcess {
 		this.parent = null;
 		if(allProcesses.isEmpty())
 			Kernel.kernel.terminate();
-		this.thisThread.finish();
+		UThread.finish();
 		return 0;
 	}
 
@@ -534,7 +541,7 @@ public class UserProcess {
 		// read page by page
 		while(byteRead < size) {
 			i = f.read(localBuffer, 0, Math.min(size - byteRead, pageSize));
-			if(i == -1) return -1;
+			if(i <= 0) return -1;
 			j = writeVirtualMemory(bufferAddr + byteRead, localBuffer, 0, i);
 			if(i != j) return -1;
 			byteRead += i;
@@ -819,7 +826,7 @@ public class UserProcess {
 
 	private Lock mutex = null;
 
-	private HashSet<Integer> children = new HashSet<>();
+	private HashMap<Integer, UserProcess> children = new HashMap<>();
 
 	private UserProcess parent = null;
 

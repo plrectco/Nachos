@@ -27,6 +27,8 @@ main (int argc, char *argv[])
 
     printf ("joining %d...\n", pid);
     r = join (pid, &status);
+    pid = exec("write10.coff", 0, 0);
+    r = join(pid, &status);
     if (r > 0) {
 	printf ("...passed (status from child = %d)\n", status);
     } else if (r == 0) {
