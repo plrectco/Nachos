@@ -467,7 +467,7 @@ public class UserProcess {
 		byte[] buffer = Lib.bytesFromInt(targetProcess.exitStatus);
 		int r = writeVirtualMemory(statusAddr, buffer);
 		if(r == 0) return -1;
-		if(targetProcess.exitStatus != -1)
+		if(!targetProcess.abnormalExit)
 			return 1;
 		else
 			return 0;
@@ -717,6 +717,7 @@ public class UserProcess {
 			break;
 
 		default:
+			abnormalExit = true;
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
 			Lib.assertNotReached("Unexpected exception");
@@ -835,6 +836,8 @@ public class UserProcess {
 	private static int idCounter = 0;
 
 	private int exitStatus = -1;
+
+	private boolean abnormalExit = false;
 
 	private int pid = 0;
 
