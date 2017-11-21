@@ -25,13 +25,10 @@ import java.util.LinkedList;
 public class UserProcess {
 	/**
 	 * Allocate a new process.
+	 * Assign pid to it, store it in the process pool
 	 */
 	public UserProcess() {
-//		int numPhysPages = Machine.processor().getNumPhysPages();
-//		pageTable = new TranslationEntry[numPhysPages];
-//		for (int i = 0; i < numPhysPages; i++)
-//			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
-		mutex = new Lock();
+
 
 		fileTable = new OpenFile[maxFileNum];
 		fileTable[0] = UserKernel.console.openForReading();
@@ -341,6 +338,7 @@ public class UserProcess {
 		if (numPages > UserKernel.getFreePageSize()) {
 			coff.close();
 			Lib.debug(dbgProcess, "\tinsufficient physical memory");
+			mutex.release();
 			return false;
 		}
 
@@ -365,7 +363,7 @@ public class UserProcess {
 
 		}
 
-		//stack, and arguments
+		//stack, and argument
 		for(int vpn = numPages - stackPages - 1; vpn < numPages; vpn++) {
 			int ppn = UserKernel.getFreePage();
 			pageTable[vpn] = new TranslationEntry(vpn, ppn, true, false, false, false);
@@ -445,7 +443,13 @@ public class UserProcess {
 		UserProcess child = new UserProcess();
 		child.parent = this;
 		if(!child.execute(name, argv))
+		{
+			mutex.acquire();
+			allProcesses.remove(child.pid);
+			mutex.release();
 			return -1;
+		}
+
 		children.put(child.pid, child);
 
 		return child.pid;
@@ -482,8 +486,11 @@ public class UserProcess {
 		this.exitStatus = status;
 		unloadSections();
 		closeFiles();
+		mutex.acquire();
 		allProcesses.remove(pid);
+		mutex.release();
 		this.parent = null;
+
 		if(allProcesses.isEmpty())
 			Kernel.kernel.terminate();
 		UThread.finish();
@@ -598,7 +605,7 @@ public class UserProcess {
 		return 0;
 	}
 
-	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
+	private final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
 			syscallUnlink = 9;
@@ -718,6 +725,7 @@ public class UserProcess {
 
 		default:
 			abnormalExit = true;
+//			handleExit(-1);
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
 			Lib.assertNotReached("Unexpected exception");
@@ -825,7 +833,7 @@ public class UserProcess {
 
 	private final int maxFileNum = 16;
 
-	private Lock mutex = null;
+	private static Lock mutex = new Lock();
 
 	private HashMap<Integer, UserProcess> children = new HashMap<>();
 
