@@ -468,15 +468,26 @@ public class UserProcess {
 		targetProcess.thisThread.join();
 
 		children.remove(processID);
+		if(targetProcess.abnormalExit)
+			return 0;
+
 		byte[] buffer = Lib.bytesFromInt(targetProcess.exitStatus);
 		int r = writeVirtualMemory(statusAddr, buffer);
 		if(r == 0) return -1;
-		if(!targetProcess.abnormalExit)
-			return 1;
-		else
-			return 0;
+		return 1;
 	}
 
+	private void cleanUp() {
+		unloadSections();
+		closeFiles();
+		mutex.acquire();
+		allProcesses.remove(pid);
+		mutex.release();
+		this.parent = null;
+		if(allProcesses.isEmpty())
+			Kernel.kernel.terminate();
+		UThread.finish();
+	}
 
 	/**
 	 * Handle the exit() system call.
@@ -484,16 +495,7 @@ public class UserProcess {
 	private int handleExit(int status) {
 		Machine.autoGrader().finishingCurrentProcess(status);
 		this.exitStatus = status;
-		unloadSections();
-		closeFiles();
-		mutex.acquire();
-		allProcesses.remove(pid);
-		mutex.release();
-		this.parent = null;
-
-		if(allProcesses.isEmpty())
-			Kernel.kernel.terminate();
-		UThread.finish();
+		cleanUp();
 		return 0;
 	}
 
@@ -725,10 +727,10 @@ public class UserProcess {
 
 		default:
 			abnormalExit = true;
-//			handleExit(-1);
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
-			Lib.assertNotReached("Unexpected exception");
+			cleanUp();
+//			Lib.assertNotReached("Unexpected exception");
 		}
 	}
 
