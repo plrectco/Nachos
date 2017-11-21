@@ -159,14 +159,20 @@ public class UserProcess {
 
 		byte[] memory = Machine.processor().getMemory();
 		int vmLength = numPages*pageSize;
-		// for now, just assume that virtual addresses equal physical addresses
+
 		if (vaddr < 0 || vaddr >= vmLength)
 			return 0;
 
+		// if the length extends beyond the VM space, it is an error, but
+		// we still copy the part that is valid.
 		int amount = Math.min(length, vmLength - vaddr);
 		int read = 0;
 		int readLength = 0;
 
+		// readLength will not be zero after first init
+		// amount make sure vaddr+read < vmLength
+		// offset enables us to copy segment by segment
+		// in the vmspace, all pages are valid
 		while(read < amount) {
 			if(readLength == 0)
 				readLength =  Math.min(pageSize - vaddr%pageSize, amount - read);
@@ -218,6 +224,8 @@ public class UserProcess {
 		if (vaddr < 0 || vaddr >= vmLength)
 			return 0;
 
+		// if the length extends beyond the VM space, it is an error, but
+		// we still copy the part that is valid.
 		int amount = Math.min(length, vmLength - vaddr);
 		int write = 0;
 		int writeLength = 0;
@@ -230,7 +238,7 @@ public class UserProcess {
 
 			if(checkReadOnly(vaddr+write))
 				return write;
-
+			// copy from data to memory
 			System.arraycopy( data, offset+write, memory, translate(vaddr + write), writeLength);
 			write += writeLength;
 		}
@@ -425,9 +433,7 @@ public class UserProcess {
 		String name = readVirtualMemoryString(nameAddr, 256);
 		if(argc < 0) return -1;
 
-		String[] argv = new String[0];
-
-		argv = new String[argc];
+		String[] argv = new String[argc];
 
 		for(int i = 0; i < argc; i++) {
 			byte [] addr = new byte[4];
@@ -435,6 +441,7 @@ public class UserProcess {
 			if(r != 4) return -1;
 
 			argv[i] = readVirtualMemoryString(Lib.bytesToInt(addr, 0), 256);
+
 			if(argv[i] == null)
 				return -1;
 		}
@@ -597,13 +604,24 @@ public class UserProcess {
 		return 0;
 	}
 
-	private int handleUnlink(int fd) {
-		if(fd < 0 || fd >= maxFileNum) return -1;
-		OpenFile f = fileTable[fd];
+	private int handleUnlink(int nameAddr) {
+		String name = getStringFromAddr(nameAddr);
+		if(name == null) return -1;
+
+		// if it exists in the current file table, close it.
+		int fd = existedFile(name);
+		if(fd != -1) {
+			fileTable[fd].close();
+			fileTable[fd] = null;
+		}
+
+		OpenFile f = UserKernel.fileSystem.open(name, false);
 		if(f == null) return  -1;
+
+		// the file exists in filesystem
 		f.close();
-		fileTable[fd] = null;
 		UserKernel.fileSystem.remove(f.getName());
+
 		return 0;
 	}
 
@@ -730,7 +748,8 @@ public class UserProcess {
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
 			cleanUp();
-//			Lib.assertNotReached("Unexpected exception");
+			// assert not reached means this should not be reached
+			Lib.assertNotReached("Unexpected exception");
 		}
 	}
 
@@ -850,5 +869,7 @@ public class UserProcess {
 	private boolean abnormalExit = false;
 
 	private int pid = 0;
+
+
 
 }

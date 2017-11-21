@@ -256,5 +256,26 @@ main ()
     } else {
 	printf ("...passed (r = %d)\n", r);
     }
+
+    printf("Remove bad.out");
+    r = unlink("bad.out");
+    if(r == 0 ) {
+    printf ("...passed (r = %d)\n", r);
+    }
+    else {
+    printf("...failed (r = %d)\n", r);
+    exit(-10);
+    }
+
+    printf("Remove bad.out again");
+    r = unlink("bad.out");
+    if(r < 0 ) {
+    printf ("...passed (r = %d)\n", r);
+
+    }
+    else {
+    printf("...failed (r = %d)\n", r);
+    exit(-10);
+    }
     return 0;
 }
