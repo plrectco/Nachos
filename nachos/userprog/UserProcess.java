@@ -509,7 +509,7 @@ public class UserProcess {
 	// do we need to handle the case the file is already open in this process
 	// no
 	private int handleCreate(int nameAddr) {
-		String name = getStringFromAddr(nameAddr);
+		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
 		OpenFile f = UserKernel.fileSystem.open(name, true);
@@ -524,7 +524,7 @@ public class UserProcess {
 	}
 
 	private int handleOpen(int nameAddr) {
-		String name = getStringFromAddr(nameAddr);
+		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
 		OpenFile f = UserKernel.fileSystem.open(name, false);
@@ -605,7 +605,7 @@ public class UserProcess {
 	}
 
 	private int handleUnlink(int nameAddr) {
-		String name = getStringFromAddr(nameAddr);
+		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
 		// if it exists in the current file table, close it.
