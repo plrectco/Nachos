@@ -557,7 +557,7 @@ public class UserProcess {
 		// read page by page
 		while(byteRead < size) {
 			i = f.read(localBuffer, 0, Math.min(size - byteRead, pageSize));
-			if(i <= 0) return -1;
+			if(i <= 0) break; // reach the end of file, not error, but end of job
 			j = writeVirtualMemory(bufferAddr + byteRead, localBuffer, 0, i);
 			if(i != j) return -1;
 			byteRead += i;
@@ -609,14 +609,15 @@ public class UserProcess {
 		if(name == null) return -1;
 
 		// if it exists in the current file table, close it.
-		int fd = existedFile(name);
-		if(fd != -1) {
-			fileTable[fd].close();
-			fileTable[fd] = null;
-		}
+		// don't need this part, as the exit will close the file
+//		int fd = existedFile(name);
+//		if(fd != -1) {
+//			fileTable[fd].close();
+//			fileTable[fd] = null;
+//		}
 
 		OpenFile f = UserKernel.fileSystem.open(name, false);
-		if(f == null) return  -1;
+		if(f == null) return  -1; // file not exists
 
 		// the file exists in filesystem
 		f.close();
@@ -826,6 +827,8 @@ public class UserProcess {
 			if(fileTable[i] != null)
 				fileTable[i].close();
 		}
+		if(coff != null)
+			coff.close();
 	}
 
 	/** The program being run by this process. */
