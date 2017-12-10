@@ -36,7 +36,7 @@ public class UserProcess {
 
 		mutex.acquire();
 		pid = ++idCounter;
-		allProcesses.put(pid, this);
+		processCounter++;
 		mutex.release();
 
 	}
@@ -257,7 +257,7 @@ public class UserProcess {
 	 * @param args the arguments to pass to the executable.
 	 * @return <tt>true</tt> if the executable was successfully loaded.
 	 */
-	private boolean load(String name, String[] args) {
+	public boolean load(String name, String[] args) {
 		Lib.debug(dbgProcess, "UserProcess.load(\"" + name + "\")");
 
 		OpenFile executable = ThreadedKernel.fileSystem.open(name, false);
@@ -341,7 +341,7 @@ public class UserProcess {
 	 * 
 	 * @return <tt>true</tt> if the sections were successfully loaded.
 	 */
-	protected boolean loadSections() {
+	public boolean loadSections() {
 		mutex.acquire();
 		if (numPages > UserKernel.getFreePageSize()) {
 			coff.close();
@@ -384,10 +384,11 @@ public class UserProcess {
 	/**
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
-	protected void unloadSections() {
+	public void unloadSections() {
 		mutex.acquire();
 		for(int i = 0; i < numPages; i++) {
-			UserKernel.returnFreePage(pageTable[i].ppn);
+			if(pageTable[i].valid)
+				UserKernel.returnFreePage(pageTable[i].ppn);
 		}
 		mutex.release();
 
@@ -419,7 +420,7 @@ public class UserProcess {
 	/**
 	 * Handle the halt() system call.
 	 */
-	private int handleHalt() {
+	public int handleHalt() {
 		if(pid == 0)
 			Machine.halt();
 		else
@@ -429,7 +430,11 @@ public class UserProcess {
 		return 0;
 	}
 
-	private int handleExec(int nameAddr, int argc, int argvAddr) {
+	public UserProcess getNewProcess() {
+		return new UserProcess();
+	}
+
+	public int handleExec(int nameAddr, int argc, int argvAddr) {
 		String name = readVirtualMemoryString(nameAddr, 256);
 		if(argc < 0) return -1;
 
@@ -447,12 +452,12 @@ public class UserProcess {
 		}
 
 
-		UserProcess child = new UserProcess();
+		UserProcess child = getNewProcess();
 		child.parent = this;
 		if(!child.execute(name, argv))
 		{
 			mutex.acquire();
-			allProcesses.remove(child.pid);
+			processCounter--;
 			mutex.release();
 			return -1;
 		}
@@ -465,7 +470,7 @@ public class UserProcess {
 	// can only join its children
 	// each can be joined once
 	// if had finished, then return
-	private int handleJoin(int processID, int statusAddr) {
+	public int handleJoin(int processID, int statusAddr) {
 		if(!children.containsKey(processID)) return -1;
 		UserProcess targetProcess = children.get(processID);
 		// if it is none, then the target process has already return
@@ -484,31 +489,31 @@ public class UserProcess {
 		return 1;
 	}
 
-	private void cleanUp() {
+	public void cleanUp() {
 		unloadSections();
 		closeFiles();
 		mutex.acquire();
-		allProcesses.remove(pid);
+		processCounter--;
 		mutex.release();
 		this.parent = null;
-		if(allProcesses.isEmpty())
-			Kernel.kernel.terminate();
-		UThread.finish();
 	}
 
 	/**
 	 * Handle the exit() system call.
 	 */
-	private int handleExit(int status) {
+	public int handleExit(int status) {
 		Machine.autoGrader().finishingCurrentProcess(status);
 		this.exitStatus = status;
 		cleanUp();
+		if(processCounter == 0)
+			Kernel.kernel.terminate();
+		UThread.finish();
 		return 0;
 	}
 
 	// do we need to handle the case the file is already open in this process
 	// no
-	private int handleCreate(int nameAddr) {
+	public int handleCreate(int nameAddr) {
 		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
@@ -523,7 +528,7 @@ public class UserProcess {
 		return fd;
 	}
 
-	private int handleOpen(int nameAddr) {
+	public int handleOpen(int nameAddr) {
 		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
@@ -538,7 +543,7 @@ public class UserProcess {
 	}
 
 
-	private int handleRead(int fd, int bufferAddr, int size) {
+	public int handleRead(int fd, int bufferAddr, int size) {
 		// check fd, size
 		if(fd < 0 || fd >= maxFileNum || size < 0) return -1;
 
@@ -568,7 +573,7 @@ public class UserProcess {
 	}
 
 	//  buffer size
-	private int handleWrite(int fd, int bufferAddr, int size) {
+	public int handleWrite(int fd, int bufferAddr, int size) {
 		// check fd, size
 		if(fd < 0 || fd >= maxFileNum || size < 0) return -1;
 		// check buffer
@@ -595,7 +600,7 @@ public class UserProcess {
 
 	}
 
-	private int handleClose(int fd) {
+	public int handleClose(int fd) {
 		if(fd < 0 || fd >= maxFileNum) return -1;
 		OpenFile f = fileTable[fd];
 		if(f == null) return  -1;
@@ -604,7 +609,7 @@ public class UserProcess {
 		return 0;
 	}
 
-	private int handleUnlink(int nameAddr) {
+	public int handleUnlink(int nameAddr) {
 		String name = readVirtualMemoryString(nameAddr, 256);
 		if(name == null) return -1;
 
@@ -749,6 +754,9 @@ public class UserProcess {
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
 			cleanUp();
+			if(processCounter == 0)
+				Kernel.kernel.terminate();
+			UThread.finish();
 			// assert not reached means this should not be reached
 			Lib.assertNotReached("Unexpected exception");
 		}
@@ -762,7 +770,7 @@ public class UserProcess {
 	 * @param vddr virtual address
 	 * @return physical address
 	 */
-	private boolean checkReadOnly(int vddr) {
+	public boolean checkReadOnly(int vddr) {
 		Lib.assertTrue(vddr >= 0 && vddr < pageSize*numPages);
 		int vpn = vddr / pageSize;
 		return pageTable[vpn].readOnly;
@@ -774,7 +782,7 @@ public class UserProcess {
 	 * @param vddr virtual address
 	 * @return physical address
 	 */
-	private int translate(int vddr) {
+	public int translate(int vddr) {
 		Lib.assertTrue(vddr >= 0 && vddr < pageSize*numPages);
 		int vpn = vddr / pageSize;
 		int ppn = pageTable[vpn].ppn;
@@ -782,39 +790,10 @@ public class UserProcess {
 	}
 
 	/**
-	 * Parse string from address
-	 * @param addr
-	 * @return parsed string
-	 */
-	private String getStringFromAddr(int addr) {
-		byte[] buffer = new byte[256];
-		int result = readVirtualMemory(addr, buffer,0, 256);
-		int i = 0;
-		for(; i < result; i++) {
-			if(buffer[i] == '\0') break;
-		}
-		if(i == 256) return null;
-		return new String(buffer, 0, i);
-	}
-
-	/**
-	 * Check if the given file already open in the file table
-	 * @param name
-	 * @return -1 if not, otherwise return the fd
-	 */
-	private int existedFile(String name) {
-		for(int i = 0; i < maxFileNum; i++) {
-			if(fileTable[i] != null && fileTable[i].getName().equals(name))
-				return i;
-		}
-		return -1;
-	}
-
-	/**
 	 * Find the next available fd
 	 * @return
 	 */
-	private int findNextFd() {
+	public int findNextFd() {
 		for(int i = 0; i < maxFileNum; i++) {
 			if(fileTable[i] == null)
 				return i;
@@ -822,7 +801,7 @@ public class UserProcess {
 		return -1;
 	}
 
-	private void closeFiles() {
+	public void closeFiles() {
 		for(int i = 0; i < maxFileNum; i++) {
 			if(fileTable[i] != null)
 				fileTable[i].close();
@@ -843,7 +822,7 @@ public class UserProcess {
 	/** The number of pages in the program's stack. */
 	protected final int stackPages = 8;
 
-	protected UThread thisThread = null;
+	public UThread thisThread = null;
 
 	private int initialPC, initialSP;
 
@@ -857,19 +836,19 @@ public class UserProcess {
 
 	private final int maxFileNum = 16;
 
-	private static Lock mutex = new Lock();
+	protected static Lock mutex = new Lock();
 
 	private HashMap<Integer, UserProcess> children = new HashMap<>();
 
 	private UserProcess parent = null;
 
-	private static HashMap<Integer, UserProcess> allProcesses = new HashMap<>();
+	public static int processCounter = 0;
 
 	private static int idCounter = 0;
 
 	private int exitStatus = -1;
 
-	private boolean abnormalExit = false;
+	public boolean abnormalExit = false;
 
 	private int pid = 0;
 

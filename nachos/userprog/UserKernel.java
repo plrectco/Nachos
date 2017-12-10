@@ -108,19 +108,16 @@ public class UserKernel extends ThreadedKernel {
 
 	private void initFreePage() {
 		freePage = new LinkedList<>();
-		int numPhyPages = Machine.processor().getNumPhysPages();
-		// assume all main mem available
+		numPhyPages = Machine.processor().getNumPhysPages();
 		for(int i = 0; i < numPhyPages; i++)
 			freePage.add(i);
-//		freePageLock = new Lock();
+
 
 	}
 
 	public static int getFreePage() {
 		Lib.assertTrue(freePage != null && !freePage.isEmpty());
-//		freePageLock.acquire();
 		int ppn = freePage.poll();
-//		freePageLock.release();
 		return ppn;
 	}
 
@@ -146,7 +143,8 @@ public class UserKernel extends ThreadedKernel {
 	// dummy variables to make javac smarter
 	private static Coff dummy1 = null;
 
-	private static Queue<Integer> freePage = null;
+	protected static Queue<Integer> freePage = null;
 
-//	private static Lock freePageLock;
+	protected static int numPhyPages = 0;
+
 }
