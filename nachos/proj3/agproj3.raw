@@ -1,0 +1,35 @@
+------[ Sat Dec  9 23:00:28 2017 ]------
+--[ swap4: Tests swapping by initializing an array larger than physical memory and reading through it - does not dirty the pages again ]--
+stty: standard input: Inappropriate ioctl for device
+stty: standard input: Inappropriate ioctl for device
+nachos 5.0j initializing... config interrupt timer processor console user-check grader
+
+success
+stty: standard input: Inappropriate ioctl for device
+--[ swap5: Tests swapping by initializing an array larger than physical memory and reading through it - dirties the pages again after initialization ]--
+stty: standard input: Inappropriate ioctl for device
+stty: standard input: Inappropriate ioctl for device
+nachos 5.0j initializing... config interrupt timer processor console user-check grader
+
+nachos.machine.AssertionFailureError: ExitGrader: expected exit status of -1000, but program actually exited with 256000000
+	at nachos.machine.Lib.assertTrue(Lib.java:89)
+	at nachos.ag.UCSDExitGrader.finishingCurrentProcess(UCSDExitGrader.java:26)
+	at nachos.userprog.UserProcess.handleExit(UserProcess.java:505)
+	at nachos.userprog.UserProcess.handleSyscall(UserProcess.java:705)
+	at nachos.userprog.UserProcess.handleException(UserProcess.java:743)
+	at nachos.vm.VMProcess.handleException(VMProcess.java:324)
+	at nachos.userprog.UserKernel.exceptionHandler(UserKernel.java:88)
+	at nachos.userprog.UserKernel$1.run(UserKernel.java:32)
+	at nachos.machine.Processor$MipsException.handle(Processor.java:619)
+	at nachos.machine.Processor.run(Processor.java:101)
+	at nachos.userprog.UThread.runProgram(UThread.java:31)
+	at nachos.userprog.UThread.access$000(UThread.java:11)
+	at nachos.userprog.UThread$1.run(UThread.java:20)
+	at nachos.threads.KThread.runThread(KThread.java:175)
+	at nachos.threads.KThread.access$000(KThread.java:46)
+	at nachos.threads.KThread$1.run(KThread.java:164)
+	at nachos.machine.TCB.threadroot(TCB.java:246)
+	at nachos.machine.TCB.access$100(TCB.java:25)
+	at nachos.machine.TCB$1.run(TCB.java:99)
+	at java.lang.Thread.run(Thread.java:745)
+stty: standard input: Inappropriate ioctl for device
