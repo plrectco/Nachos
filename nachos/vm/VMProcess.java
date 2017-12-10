@@ -78,6 +78,7 @@ public class VMProcess extends UserProcess {
 
 			TranslationEntry entry = pageTable[(vaddr+read)/pageSize];
 
+			needToPin = true;
 			if(!entry.valid)
 				handlePageFault((vaddr+read));
 
@@ -89,6 +90,7 @@ public class VMProcess extends UserProcess {
 			waitForUnpinned.wake();
 			mutex.release();
 			read += readLength;
+			needToPin = false;
 		}
 
 
@@ -141,7 +143,7 @@ public class VMProcess extends UserProcess {
 				return write;
 			// copy from data to memory
 			TranslationEntry entry = pageTable[(vaddr+write)/pageSize];
-
+			needToPin = true;
 			if(!entry.valid)
 				handlePageFault((vaddr+write));
 
@@ -157,6 +159,7 @@ public class VMProcess extends UserProcess {
 			waitForUnpinned.wake();
 			mutex.release();
 			write += writeLength;
+			needToPin = false;
 		}
 
 
@@ -251,9 +254,15 @@ public class VMProcess extends UserProcess {
 
 		int ppn = getPPNFromKernel();
 
+		mutex.acquire();
+		if(needToPin)
+			VMKernel.pinPage(ppn);
 		VMKernel.setInvertTable(ppn, this, vpn);
+		mutex.release();
+
 		pageTable[vpn].ppn = ppn;
 		pageTable[vpn].valid = true;
+		pageTable[vpn].used = true;
 
 		if(swpTable.containsKey(vpn)) {
 			// has been swapped
@@ -318,7 +327,11 @@ public class VMProcess extends UserProcess {
 					super.handleException(Processor.exceptionAddressError);
 				}
 
-				processor.writeRegister(Processor.regV0, result);
+				// Unlike other exception, after handle page fault exception, we do not advance PC.
+				// Therefore if you the result of handlePageFault to Processor.regV0 as other exception handler does,
+				// you will possibly modify the register value that is still useful for the current instruction!
+				// Don't do this.
+//				processor.writeRegister(Processor.regV0, result);
 				break;
 		default:
 			super.handleException(cause);
@@ -329,9 +342,9 @@ public class VMProcess extends UserProcess {
 	// require mutex
 	// find one of the valid page to be evicted
 	public int findVictim() {
-
 		// clock algorithm
 		while(true) {
+			pagePtr = (pagePtr+1)%numPhyPages;
 			if(VMKernel.isAllPinned()) {
 				waitForUnpinned.sleep();
 			}
@@ -350,7 +363,7 @@ public class VMProcess extends UserProcess {
 						break;
 				}
 			}
-			pagePtr = (pagePtr+1)%numPhyPages;
+
 		}
 
 		return pagePtr;
@@ -361,19 +374,21 @@ public class VMProcess extends UserProcess {
 	// require the pagetable entry is valid
 	public boolean evict(int ppn) {
 
-		Lib.debug(dbgProcess, "evicting " + ppn);
+
 		int victimVPN = VMKernel.getvpn(ppn);
 		VMProcess vp = VMKernel.getVMProcess(ppn);
 		Lib.assertTrue(vp != null && victimVPN != -1);
 		TranslationEntry victim = vp.pageTable[victimVPN];
 		if(victim.dirty){
+			Lib.debug(dbgProcess, ppn + " is dirty");
 			int spn = VMKernel.getFreeSwapPages();
 			vp.swpTable.put(victimVPN, spn);
 			byte[] memory = Machine.processor().getMemory();
 			int written = VMKernel.swpFile.write(spn*pageSize, memory, ppn*pageSize, pageSize);
 			Lib.assertTrue(written == pageSize);
+			Lib.debug(dbgProcess, "write vpn " + victimVPN + " spn "+ spn);
 		}
-
+		Lib.debug(dbgProcess, "evicting " + ppn + " from " + victimVPN);
 		VMKernel.removeInvertTableMap(ppn);
 
 		victim.valid = false;
@@ -416,6 +431,7 @@ public class VMProcess extends UserProcess {
 		int j = writeVirtualMemory(vpn*pageSize, localBuffer, 0, pageSize);
 		Lib.assertTrue(i == j);
 
+		Lib.debug(dbgProcess, "read from spn " + spn);
 
 
 		return true;
@@ -448,6 +464,6 @@ public class VMProcess extends UserProcess {
 
 	private static int numPhyPages = Machine.processor().getNumPhysPages();
 
-
+	private boolean needToPin = false;
 
 }

@@ -115,6 +115,9 @@ public class UserKernel extends ThreadedKernel {
 
 	}
 
+	/*
+
+	 */
 	public static int getFreePage() {
 		Lib.assertTrue(freePage != null && !freePage.isEmpty());
 		int ppn = freePage.poll();
@@ -126,7 +129,12 @@ public class UserKernel extends ThreadedKernel {
 		return freePage.size();
 	}
 
+	/**
+	 * Set ppn to be unused; return it to the free list
+	 * @param ppn
+	 */
 	public static void returnFreePage(int ppn) {
+		Lib.assertTrue(freePage != null);
 		freePage.add(ppn);
 	}
 

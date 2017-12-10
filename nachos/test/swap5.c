@@ -22,22 +22,38 @@ void
 write_buf (int base)
 {
     int i;
-
+    printf("The argument base is %d\n", base);
     for (i = 0; i < bigbufnum; i++) {
 	bigbuf[i] = i + base;
+//	if(i==191)
+//	{
+//	    printf("before 192\n");
+//	}
+//	if(i == 192) {
+//	 printf("in loop Pos 192: %d, base: %d, i:%d, i+base: %d\n", bigbuf[192], base, i, i+base);
+//	}
+//	if(i == 192)
+//	     printf("in loop: not writtern into buffer, base+i: %d, buffer: %d\n", base+i, bigbuf[i] );
+//    int j = bigbuf[i];
+//    printf("%d ",bigbuf[i]);
+
     }
+
+    printf("Pos 192 %d", bigbuf[192]);
 }
 
 void
 validate_buf (int base)
 {
     int i;
-
+    printf("Validating...\n");
+    printf("The argument base is %d\n", base);
     for (i = 0; i < bigbufnum; i++) {
 	if (bigbuf[i] != (i + base)) {
 	    // encode both the index and the bad data value in the status...
 	    int s = i * 1000 * 1000;
 	    s += bigbuf[i];
+	    printf("expected %d, but get %d\n", i+base, bigbuf[i]);
 	    printf("failed\n");
 	    exit (s);
 	}
