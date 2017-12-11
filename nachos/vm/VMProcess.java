@@ -266,7 +266,7 @@ public class VMProcess extends UserProcess {
 
 		if(swpTable.containsKey(vpn)) {
 			// has been swapped
-			if(!readSwap(vpn, ppn)) {
+			if(!readSwap(vpn)) {
 				Lib.assertNotReached("Error reading swap file");
 			}
 
@@ -339,9 +339,15 @@ public class VMProcess extends UserProcess {
 		}
 	}
 
-	// require mutex
-	// find one of the valid page to be evicted
+	/**
+	 * Require mutex
+	 * Find one of the valid page to be evicted
+	 * Clock algorithm
+	 * Not finding the page that is not valid. This is a redundant check
+	 * @return the ppn to be evicted
+	 */
 	public int findVictim() {
+		Lib.assertTrue(mutex.isHeldByCurrentThread());
 		// clock algorithm
 		while(true) {
 			pagePtr = (pagePtr+1)%numPhyPages;
@@ -355,7 +361,6 @@ public class VMProcess extends UserProcess {
 			if(vp == null) continue;
 			TranslationEntry entry = vp.pageTable[vpn];
 			if(entry.valid) {
-				// redundant check, safe though
 				if(entry.used)
 					entry.used = false;
 				else {
@@ -369,11 +374,16 @@ public class VMProcess extends UserProcess {
 		return pagePtr;
 	}
 
-	// require mutex
-	// require the ppn is unpinned
-	// require the pagetable entry is valid
+	/**
+	 * require mutex
+	 * require the ppn is unpinned
+	 * require the pagetable entry is valid
+	 * @param ppn
+	 * @return
+	 */
 	public boolean evict(int ppn) {
-
+		Lib.assertTrue(mutex.isHeldByCurrentThread());
+		Lib.assertTrue(!VMKernel.isPinned(ppn));
 
 		int victimVPN = VMKernel.getvpn(ppn);
 		VMProcess vp = VMKernel.getVMProcess(ppn);
@@ -400,6 +410,10 @@ public class VMProcess extends UserProcess {
 		return true;
 	}
 
+	/**
+	 *
+	 * @return ppn that is ready to be used
+	 */
 	public int getPPNFromKernel() {
 		mutex.acquire();
 		int ppn = -1;
@@ -414,9 +428,17 @@ public class VMProcess extends UserProcess {
 		return ppn;
 	}
 
-	public boolean readSwap(int vpn, int ppn) {
+	/**
+	 * Reading a virtual page from swap file
+	 * Require the page table entry is set
+	 * Only load the content of it
+	 * @param vpn
+	 * @return
+	 */
+	public boolean readSwap(int vpn) {
 
 		Lib.assertTrue(isVPNValid(vpn));
+		Lib.assertTrue(pageTable[vpn].valid && pageTable[vpn].ppn != -1);
 		int spn = swpTable.get(vpn);
 		swpTable.remove(vpn);
 		byte[] memory = Machine.processor().getMemory();
